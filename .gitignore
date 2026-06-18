@@ -27,3 +27,7 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+# data 폴더 (sample.pdf만 Git에 포함)
+data/*
+!data/sample.pdf
