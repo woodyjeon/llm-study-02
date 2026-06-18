@@ -67,6 +67,8 @@ OPENAI_API_KEY=your-api-key-here
 | 12 | `langchain_chatbot4.py` | 재테크 입문 챗봇 (`pills` + wide 레이아웃 + `{question}`) |
 | 13 | `langchain_rag.py` | `PyPDFLoader`로 PDF → Document 변환 (RAG 1단계) |
 | 14 | `langchain_rag2.py` | `RecursiveCharacterTextSplitter`로 텍스트 분할 (RAG 2단계) |
+| 15 | `langchain_chroma_rag.py` | `OpenAIEmbeddings` + Chroma 벡터 DB 저장 (RAG 3단계) |
+| 16 | `langchain_retriever_rag.py` | `as_retriever()`로 유사 문서 검색 (RAG 4단계) |
 
 ```bash
 python langchain_role.py
@@ -74,6 +76,8 @@ python langchain_repeat.py
 # ...
 python langchain_rag.py                  # PDF 문서 로딩
 python langchain_rag2.py                 # 텍스트 청크 분할
+python langchain_chroma_rag.py           # 벡터 DB 생성 (먼저 실행)
+python langchain_retriever_rag.py        # 저장된 DB에서 유사 문서 검색
 streamlit run langchain_chatbot3.py   # 여행 추천 웹 UI
 streamlit run langchain_chatbot4.py   # 재테크 입문 웹 UI
 ```
@@ -212,12 +216,11 @@ for doc in documents:
 
 > `PyPDFLoader`는 pip 패키지가 아닙니다. `pip install langchain-community pypdf`로 설치하세요.
 
-**RAG 파이프라인 흐름 (학습 예정):**
+**RAG 파이프라인 흐름:**
 
 ```
-PDF 로딩 → 텍스트 분할(Chunking) → 임베딩 → 벡터 DB 저장 → 검색 → LLM 답변
-   ↑              ↑
-rag.py         rag2.py (현재 단계)
+PDF 로딩 → 텍스트 분할 → 임베딩·벡터 DB → 검색(Retriever) → LLM 답변
+  rag.py     rag2.py      chroma_rag.py    retriever_rag.py    (다음 단계)
 ```
 
 ### 10. RAG — 텍스트 분할 (Text Splitter)
@@ -242,6 +245,59 @@ splits = text_splitter.split_documents(documents)
 
 > 페이지 수(예: 10페이지)보다 청크 수(예: 25개)가 많을 수 있습니다. 한 페이지가 `chunk_size`보다 길면 여러 청크로 나뉩니다.
 
+### 11. RAG — 벡터 DB 저장 (Chroma)
+
+| 개념 | 설명 |
+|------|------|
+| **Embedding** | 텍스트를 고차원 벡터로 변환 — 의미가 비슷한 문장은 벡터도 가깝게 배치 |
+| `OpenAIEmbeddings` | OpenAI 임베딩 API (`text-embedding-3-small` 등) |
+| `Chroma` | 로컬 벡터 데이터베이스 — 임베딩 저장·유사도 검색 |
+| `from_documents()` | Document 청크를 임베딩해 DB **생성** (최초 1회) |
+| `persist_directory` | DB 파일이 저장되는 로컬 폴더 (`./chroma_store`) |
+| `collection_name` | Chroma 컬렉션 이름 — 로드 시 동일하게 지정 |
+
+```python
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+vectorstore = Chroma.from_documents(
+    documents=splits,
+    embedding=embeddings,
+    persist_directory="./chroma_store",
+    collection_name="pdf_collection",
+)
+```
+
+> ⚠️ 파일명을 `langchain_chroma.py`로 짓면 `langchain_chroma` 패키지와 충돌합니다. `langchain_chroma_rag.py`처럼 다른 이름을 사용하세요.
+
+> `langchain_chroma_rag.py` 실행 전, 스크립트에서 지정한 PDF 파일을 `data/` 폴더에 준비하세요.
+
+### 12. RAG — Retriever 검색
+
+| 개념 | 설명 |
+|------|------|
+| **Retriever** | 질의(query)를 받아 관련 Document 청크를 반환하는 검색 인터페이스 |
+| `as_retriever()` | 벡터스토어를 Retriever로 변환 |
+| `search_kwargs k` | 반환할 상위 유사 문서 개수 |
+| `retriever.invoke(query)` | 자연어 질의 → 유사 청크 `List[Document]` 반환 |
+| `Chroma()` | `persist_directory`에 저장된 기존 DB **로드** (`from_documents` 아님) |
+
+```python
+# 기존 DB 로드
+vectorstore = Chroma(
+    embedding_function=embeddings,
+    persist_directory="./chroma_store",
+    collection_name="pdf_collection",
+)
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+docs = retriever.invoke("문서의 핵심 내용은 무엇인가요?")
+```
+
+> `langchain_retriever_rag.py`는 `langchain_chroma_rag.py`를 먼저 실행해 `chroma_store`가 있어야 동작합니다.
+
 ---
 
 ## 파일별 설명
@@ -262,9 +318,12 @@ splits = text_splitter.split_documents(documents)
 | `langchain_chatbot4.py` | 재테크 입문 챗봇 — `pills` 주제 선택, wide 레이아웃, `{question}` 변수 |
 | `langchain_rag.py` | `PyPDFLoader`로 PDF → `Document` 변환 (RAG 문서 로딩) |
 | `langchain_rag2.py` | `RecursiveCharacterTextSplitter`로 Document 청크 분할 (RAG 2단계) |
+| `langchain_chroma_rag.py` | `OpenAIEmbeddings` + `Chroma.from_documents()`로 벡터 DB 저장 (RAG 3단계) |
+| `langchain_retriever_rag.py` | `Chroma` 로드 + `as_retriever()`로 유사 문서 검색 (RAG 4단계) |
 | `data/sample.pdf` | RAG 학습용 샘플 PDF (Git 포함) |
+| `chroma_store/` | Chroma 벡터 DB 저장 폴더 (`chroma_rag.py` 실행 시 생성) |
 | `.env.example` | API 키 설정 예시 (실제 키 X) |
-| `requirements.txt` | 필요 패키지 목록 (`streamlit`, `langchain-community`, `pypdf` 포함) |
+| `requirements.txt` | 필요 패키지 목록 (`streamlit`, `langchain-community`, `langchain-chroma`, `pypdf` 포함) |
 
 ---
 
@@ -275,4 +334,5 @@ splits = text_splitter.split_documents(documents)
 - `.env` — API 키 등 비밀정보
 - `.venv/` — 가상환경
 - `__pycache__/` — Python 캐시
+- `chroma_store/` — Chroma 벡터 DB (실행 시 자동 생성)
 - `data/*` — PDF 등 데이터 파일 (`data/sample.pdf`만 예외로 포함)

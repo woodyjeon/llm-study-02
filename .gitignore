@@ -31,3 +31,6 @@ build/
 # data 폴더 (sample.pdf만 Git에 포함)
 data/*
 !data/sample.pdf
+
+# Chroma 벡터 DB (chroma_rag.py 실행 시 생성)
+chroma_store/
