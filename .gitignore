@@ -1,0 +1,29 @@
+# 환경변수 (API 키 등 비밀정보)
+.env
+.env.*
+!.env.example
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# Python 캐시
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 기타
+*.log
+dist/
+build/
+*.egg-info/
